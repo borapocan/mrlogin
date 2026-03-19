@@ -499,7 +499,8 @@ static void start_session(void) {
 }
 
 int main(void) {
-	dpy = XOpenDisplay(":0");
+	char *display = getenv("DISPLAY");
+	dpy = XOpenDisplay(display ? display : ":0");
 	if (!dpy) { fprintf(stderr, "Cannot open display :0\n"); return 1; }
 	screen = DefaultScreen(dpy);
 	root   = RootWindow(dpy, screen);
