@@ -1,16 +1,13 @@
 [Unit]
 Description=MrLogin - Display Manager for MrRobotOS
 After=systemd-user-sessions.service
-After=plymouth-quit-wait.service
 Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/sh -c 'X :0 vt1 -nolisten tcp &'
-ExecStartPre=/bin/sleep 1
-ExecStart=/usr/local/bin/mrlogin
+ExecStart=/bin/sh -c 'Xorg :0 vt1 -nolisten tcp & sleep 2 && DISPLAY=:0 /usr/local/bin/mrlogin'
 Restart=always
-RestartSec=1
+RestartSec=2
 StandardInput=tty
 TTYPath=/dev/tty1
 TTYReset=yes
