@@ -5,7 +5,19 @@ Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-ExecStart=/bin/sh -c 'Xorg :0 vt1 -nolisten tcp & sleep 2 && DISPLAY=:0 /usr/local/bin/mrlogin'
+ExecStart=/bin/sh -c '\
+  while true; do \
+    Xorg :0 vt1 -nolisten tcp & \
+    XPID=$!; \
+    for i in $(seq 1 10); do \
+      DISPLAY=:0 xdpyinfo >/dev/null 2>&1 && break; \
+      sleep 1; \
+    done; \
+    DISPLAY=:0 /usr/local/bin/mrlogin; \
+    kill $XPID 2>/dev/null; \
+    wait $XPID 2>/dev/null; \
+    sleep 1; \
+  done'
 Restart=always
 RestartSec=2
 StandardInput=tty
