@@ -1,8 +1,7 @@
 /* MrLogin - Display Manager for MrRobotOS
  * Compile: gcc -o mrlogin mrlogin.c -lX11 -lXft -lpam -I/usr/include/freetype2
- * Maintainer: Bora Poçan - mborapocan@gmail.com
+ * Maintainer: Bora Poçan <borapocan@github.com>
  */
-
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +32,7 @@
 #define USER_BTN_H    100
 #define USER_BTN_R    14
 #define AVATAR_R      28
-#define DOT_PAD_Y     14  /* padding above and below dots */
+#define DOT_PAD_Y     14
 #define BG_COLOR      "#0a0a0c"
 #define CARD_COLOR    "#161618"
 #define INPUT_FOCUS   "#2a2a2c"
@@ -133,7 +132,8 @@ static void get_users(void) {
 	struct passwd *pw;
 	setpwent();
 	while ((pw = getpwent()) && nusers < MAX_USERS) {
-		if (pw->pw_uid < MIN_UID) continue;
+		/* allow root (uid 0) for live ISO, skip other system users */
+		if (pw->pw_uid != 0 && pw->pw_uid < MIN_UID) continue;
 		if (strcmp(pw->pw_name, "nobody") == 0) continue;
 		if (strcmp(pw->pw_shell, "/sbin/nologin") == 0) continue;
 		if (strcmp(pw->pw_shell, "/bin/false") == 0) continue;
@@ -253,18 +253,16 @@ static void draw_users(int card_x, int card_y) {
 	}
 }
 
-/* returns total height of dots section including padding */
 static int dots_height(void) {
-	return DOT_PAD_Y + 10 + DOT_PAD_Y; /* pad + dot diameter + pad */
+	return DOT_PAD_Y + 10 + DOT_PAD_Y;
 }
 
 static void draw_attempt_dots(int cx, int y) {
-	/* y is top of the dots section including top padding */
 	int dot_r   = 5;
 	int dot_gap = 18;
 	int total   = MAX_ATTEMPTS * dot_gap;
 	int sx      = cx - total/2;
-	int dot_cy  = y + DOT_PAD_Y + dot_r; /* center of dots with top padding */
+	int dot_cy  = y + DOT_PAD_Y + dot_r;
 	for (int i = 0; i < MAX_ATTEMPTS; i++) {
 		int dx = sx + i * dot_gap;
 		if (i < fail_count) {
@@ -330,62 +328,46 @@ static void draw_lockout(int x, int y, int w) {
 static void redraw(void) {
 	XSetForeground(dpy, gc, mkcolor(BG_COLOR));
 	XFillRectangle(dpy, win, gc, 0, 0, sw, sh);
-
 	/* grid */
 	XSetForeground(dpy, gc, mkcolor("#0e0e10"));
 	for (int gx = 0; gx < sw; gx += 40)
 		XDrawLine(dpy, win, gc, gx, 0, gx, sh);
 	for (int gy = 0; gy < sh; gy += 40)
 		XDrawLine(dpy, win, gc, 0, gy, sw, gy);
-
 	/* top accent */
 	XSetForeground(dpy, gc, mkcolor(ACCENT));
 	XFillRectangle(dpy, win, gc, 0, 0, sw, 4);
-
 	draw_clock();
-
 	int cx = sw/2 - CARD_W/2;
 	int cy = sh/2 - CARD_H/2;
-
 	/* shadow */
 	XSetForeground(dpy, gc, mkcolor("#050507"));
 	fill_rounded(cx+5, cy+5, CARD_W, CARD_H, CARD_R);
-
 	XSetForeground(dpy, gc, mkcolor(CARD_COLOR));
 	fill_rounded(cx, cy, CARD_W, CARD_H, CARD_R);
 	XSetForeground(dpy, gc, mkcolor(SEPARATOR));
 	stroke_rounded(cx, cy, CARD_W, CARD_H, CARD_R);
 	XSetForeground(dpy, gc, mkcolor(ACCENT));
 	XFillRectangle(dpy, win, gc, cx+CARD_R, cy, CARD_W-2*CARD_R, 3);
-
 	draw_text_c("Welcome Back", font_title, sw/2, cy+34, TEXT_COLOR);
 	draw_text_c("Sign in to your account", font_subtitle, sw/2, cy+56, TEXT_DIM);
 	XSetForeground(dpy, gc, mkcolor(SEPARATOR));
 	XDrawLine(dpy, win, gc, cx+20, cy+72, cx+CARD_W-20, cy+72);
-
 	draw_users(cx, cy);
-
 	char welcome[128];
 	snprintf(welcome, sizeof(welcome), "Signing in as  %s", users[sel_user].name);
 	draw_text_c(welcome, font_label, sw/2, cy+202, TEXT_MID);
-
 	int ix  = cx + 28;
 	int iw  = CARD_W - 56;
 	int py  = cy + 218;
-
 	time_t now = time(NULL);
 	int locked = !disabled && locked_until > now;
-
 	if (disabled || locked) {
 		draw_lockout(ix, py, iw);
 	} else {
 		draw_password_field(ix, py, iw);
-
-		/* dots with padding */
-		int dots_y = py + INPUT_H; /* top of dots section */
+		int dots_y = py + INPUT_H;
 		draw_attempt_dots(sw/2, dots_y);
-
-		/* login button below dots (dots section = DOT_PAD_Y + dot + DOT_PAD_Y) */
 		int lby = dots_y + dots_height() + 4;
 		XSetForeground(dpy, gc, mkcolor(ACCENT));
 		fill_rounded(ix, lby, iw, 50, INPUT_R);
@@ -393,8 +375,6 @@ static void redraw(void) {
 		fill_rounded(ix+1, lby+1, iw-2, 25, INPUT_R);
 		draw_text_c("LOGIN", font_title, sw/2-20, lby+26, TEXT_COLOR);
 		draw_text_c(FA_ARROW, font_fa_lg, sw/2+60, lby+26, TEXT_COLOR);
-
-		/* error */
 		if (error_msg[0]) {
 			int eby = lby + 58;
 			XSetForeground(dpy, gc, mkcolor("#2a0a0a"));
@@ -403,10 +383,8 @@ static void redraw(void) {
 			draw_text_c(error_msg, font_label, sw/2+10, eby+16, ERROR_COLOR);
 		}
 	}
-
 	draw_text_c("Tab · Switch User    Enter · Login    Esc · Clear",
 		font_label, sw/2, sh-18, TEXT_DIM);
-
 	XFlush(dpy);
 }
 
@@ -462,21 +440,21 @@ static void start_session(void) {
 	setenv("USER",    u->name,  1);
 	setenv("LOGNAME", u->name,  1);
 	setenv("SHELL",   u->shell, 1);
-	setenv("DISPLAY", ":0",     1);
+	/* use current DISPLAY env var */
+	char *disp = getenv("DISPLAY");
+	setenv("DISPLAY", disp ? disp : ":0", 1);
 	char zdotdir[300];
 	snprintf(zdotdir, sizeof(zdotdir), "%s/.config/zsh", u->home);
 	setenv("ZDOTDIR", zdotdir, 1);
-	/* set critical paths so zshrc can find them */
 	char zshcfg[300], zsh[300], xdg_config[300], xdg_data[300];
 	snprintf(zshcfg,     sizeof(zshcfg),     "%s/.config/zsh/zshcfg",     u->home);
 	snprintf(zsh,        sizeof(zsh),        "%s/.config/zsh/zshcfg/OMZ", u->home);
 	snprintf(xdg_config, sizeof(xdg_config), "%s/.config",                u->home);
 	snprintf(xdg_data,   sizeof(xdg_data),   "%s/.local/share",           u->home);
-	setenv("ZSHCFG",         zshcfg,     1);
-	setenv("ZSH",            zsh,        1);
-	setenv("XDG_CONFIG_HOME",xdg_config, 1);
-	setenv("XDG_DATA_HOME",  xdg_data,   1);
-	/* set PATH to include user scripts */
+	setenv("ZSHCFG",          zshcfg,     1);
+	setenv("ZSH",             zsh,        1);
+	setenv("XDG_CONFIG_HOME", xdg_config, 1);
+	setenv("XDG_DATA_HOME",   xdg_data,   1);
 	char path[1024];
 	snprintf(path, sizeof(path),
 		"%s/.local/bin:"
@@ -501,16 +479,14 @@ static void start_session(void) {
 int main(void) {
 	char *display = getenv("DISPLAY");
 	dpy = XOpenDisplay(display ? display : ":0");
-	if (!dpy) { fprintf(stderr, "Cannot open display :0\n"); return 1; }
+	if (!dpy) { fprintf(stderr, "Cannot open display\n"); return 1; }
 	screen = DefaultScreen(dpy);
 	root   = RootWindow(dpy, screen);
 	vis    = DefaultVisual(dpy, screen);
 	cmap   = DefaultColormap(dpy, screen);
-
 	get_primary_monitor();
 	get_users();
 	if (nusers == 0) { fprintf(stderr, "No users found\n"); return 1; }
-
 	XSetWindowAttributes wa;
 	wa.override_redirect = True;
 	wa.background_pixel  = mkcolor(BG_COLOR);
@@ -518,12 +494,10 @@ int main(void) {
 	win = XCreateWindow(dpy, root, 0, 0, sw, sh, 0,
 		DefaultDepth(dpy, screen), InputOutput, vis,
 		CWOverrideRedirect|CWBackPixel|CWEventMask, &wa);
-
 	XMapRaised(dpy, win);
 	XGrabKeyboard(dpy, win, True, GrabModeAsync, GrabModeAsync, CurrentTime);
 	XGrabPointer(dpy, win, True, ButtonPressMask,
 		GrabModeAsync, GrabModeAsync, win, None, CurrentTime);
-
 	gc            = XCreateGC(dpy, win, 0, NULL);
 	xdraw         = XftDrawCreate(dpy, win, vis, cmap);
 	font_title    = XftFontOpenName(dpy, screen, FONT_TITLE);
@@ -536,9 +510,7 @@ int main(void) {
 	font_avatar   = XftFontOpenName(dpy, screen, FONT_AVATAR);
 	font_fa       = XftFontOpenName(dpy, screen, FONT_FA);
 	font_fa_lg    = XftFontOpenName(dpy, screen, FONT_FA_LG);
-
 	redraw();
-
 	XEvent ev;
 	while (!auth_ok) {
 		struct timeval tv = { 1, 0 };
@@ -547,14 +519,12 @@ int main(void) {
 		FD_ZERO(&fds);
 		FD_SET(fd, &fds);
 		if (select(fd+1, &fds, NULL, NULL, &tv) == 0) { redraw(); continue; }
-
 		XNextEvent(dpy, &ev);
 		if (ev.type == Expose) {
 			redraw();
 		} else if (ev.type == ButtonPress) {
 			int bx = ev.xbutton.x;
 			int by = ev.xbutton.y;
-
 			/* eye */
 			if (bx >= eye_x && bx <= eye_x+eye_w &&
 			    by >= eye_y && by <= eye_y+eye_h) {
@@ -562,7 +532,6 @@ int main(void) {
 				redraw();
 				continue;
 			}
-
 			/* user buttons */
 			int cols = (nusers > 3) ? 3 : nusers;
 			if (cols < 1) cols = 1;
@@ -586,17 +555,15 @@ int main(void) {
 					fail_count = 0;
 				}
 			}
-
 			/* login button */
-			int ix   = card_x + 28;
-			int iw   = CARD_W - 56;
-			int py   = card_y + 218;
+			int ix     = card_x + 28;
+			int iw     = CARD_W - 56;
+			int py     = card_y + 218;
 			int dots_y = py + INPUT_H;
-			int lby  = dots_y + dots_height() + 4;
+			int lby    = dots_y + dots_height() + 4;
 			if (bx >= ix && bx <= ix+iw &&
 			    by >= lby && by <= lby+50)
 				try_login();
-
 			redraw();
 		} else if (ev.type == KeyPress) {
 			char buf[32] = {0};
@@ -622,12 +589,10 @@ int main(void) {
 			redraw();
 		}
 	}
-
 	XUngrabKeyboard(dpy, CurrentTime);
 	XUngrabPointer(dpy, CurrentTime);
 	XDestroyWindow(dpy, win);
 	XCloseDisplay(dpy);
-
 	pid_t pid = fork();
 	if (pid == 0) {
 		start_session();
