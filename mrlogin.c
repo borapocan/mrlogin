@@ -458,11 +458,15 @@ static void start_session(void) {
 	char path[1024];
 	snprintf(path, sizeof(path),
 		"%s/.local/bin:"
-		"%s/.local/bin/mrblocks-scripts:"
-		"%s/.local/bin/mrpanel-genmon-scripts:"
-		"%s/.local/bin/system-scripts:"
-		"/usr/local/bin:/usr/bin:/bin",
-		u->home, u->home, u->home, u->home);
+    		"%s/.local/bin/mrblocks-scripts:"
+    		"%s/.local/bin/mrpanel-genmon-scripts:"
+    		"%s/.local/bin/system-scripts:"
+    		"/usr/local/bin:"
+    		"/usr/local/bin/mrblocks-scripts:"
+    		"/usr/local/bin/mrpanel-genmon-scripts:"
+    		"/usr/local/bin/system-scripts:"
+    		"/usr/local/sbin:/usr/bin:/bin",
+    		u->home, u->home, u->home, u->home);
 	setenv("PATH", path, 1);
 	chdir(u->home);
 	char xinitrc[300];
