@@ -108,7 +108,7 @@ static int eye_x = 0, eye_y = 0, eye_w = 36, eye_h = 36;
 
 static const char *pam_password = NULL;
 static int pam_conv_func(int num_msg, const struct pam_message **msg,
-                         struct pam_response **resp, void *appdata) {
+			 struct pam_response **resp, void *appdata) {
 	*resp = calloc(num_msg, sizeof(struct pam_response));
 	for (int i = 0; i < num_msg; i++)
 		if (msg[i]->msg_style == PAM_PROMPT_ECHO_OFF ||
@@ -132,8 +132,8 @@ static void get_users(void) {
 	struct passwd *pw;
 	setpwent();
 	while ((pw = getpwent()) && nusers < MAX_USERS) {
-		/* allow root (uid 0) for live ISO, skip other system users */
-		if (pw->pw_uid != 0 && pw->pw_uid < MIN_UID) continue;
+		if (pw->pw_uid == 0) continue; /* skip root here, add at end */
+		if (pw->pw_uid < MIN_UID) continue;
 		if (strcmp(pw->pw_name, "nobody") == 0) continue;
 		if (strcmp(pw->pw_shell, "/sbin/nologin") == 0) continue;
 		if (strcmp(pw->pw_shell, "/bin/false") == 0) continue;
@@ -148,6 +148,18 @@ static void get_users(void) {
 		nusers++;
 	}
 	endpwent();
+	/* add root at end */
+	if (nusers < MAX_USERS) {
+		pw = getpwnam("root");
+		if (pw) {
+			strncpy(users[nusers].name,  pw->pw_name,  63);
+			strncpy(users[nusers].home,  pw->pw_dir,   255);
+			strncpy(users[nusers].shell, pw->pw_shell, 255);
+			users[nusers].uid = pw->pw_uid;
+			users[nusers].gid = pw->pw_gid;
+			nusers++;
+		}
+	}
 }
 
 static void get_primary_monitor(void) {
@@ -294,7 +306,7 @@ static void draw_password_field(int x, int y, int w) {
 	eye_y = y + INPUT_H/2 - eye_h/2;
 	const char *eye_icon = show_pass ? FA_EYE_SLASH : FA_EYE;
 	draw_text_c(eye_icon, font_fa, eye_x+eye_w/2, eye_y+eye_h/2,
-		show_pass ? ACCENT : TEXT_DIM);
+		    show_pass ? ACCENT : TEXT_DIM);
 }
 
 static void draw_lockout(int x, int y, int w) {
@@ -384,7 +396,7 @@ static void redraw(void) {
 		}
 	}
 	draw_text_c("Tab · Switch User    Enter · Login    Esc · Clear",
-		font_label, sw/2, sh-18, TEXT_DIM);
+		    font_label, sw/2, sh-18, TEXT_DIM);
 	XFlush(dpy);
 }
 
@@ -422,7 +434,7 @@ static void try_login(void) {
 			int left = MAX_ATTEMPTS - fail_count;
 			if (left > 0)
 				snprintf(error_msg, sizeof(error_msg),
-					"Incorrect password. %d attempt%s remaining.", left, left==1?"":"s");
+					 "Incorrect password. %d attempt%s remaining.", left, left==1?"":"s");
 			else
 				snprintf(error_msg, sizeof(error_msg), "Incorrect password.");
 		}
@@ -457,16 +469,16 @@ static void start_session(void) {
 	setenv("XDG_DATA_HOME",   xdg_data,   1);
 	char path[1024];
 	snprintf(path, sizeof(path),
-		"%s/.local/bin:"
-    		"%s/.local/bin/mrblocks-scripts:"
-    		"%s/.local/bin/mrpanel-genmon-scripts:"
-    		"%s/.local/bin/system-scripts:"
-    		"/usr/local/bin:"
-    		"/usr/local/bin/mrblocks-scripts:"
-    		"/usr/local/bin/mrpanel-genmon-scripts:"
-    		"/usr/local/bin/system-scripts:"
-    		"/usr/local/sbin:/usr/bin:/bin",
-    		u->home, u->home, u->home, u->home);
+		 "%s/.local/bin:"
+		 "%s/.local/bin/mrblocks-scripts:"
+		 "%s/.local/bin/mrpanel-genmon-scripts:"
+		 "%s/.local/bin/system-scripts:"
+		 "/usr/local/bin:"
+		 "/usr/local/bin/mrblocks-scripts:"
+		 "/usr/local/bin/mrpanel-genmon-scripts:"
+		 "/usr/local/bin/system-scripts:"
+		 "/usr/local/sbin:/usr/bin:/bin",
+		 u->home, u->home, u->home, u->home);
 	setenv("PATH", path, 1);
 	chdir(u->home);
 	char xinitrc[300];
@@ -474,13 +486,15 @@ static void start_session(void) {
 	if (access(xinitrc, X_OK) == 0) {
 		char cmd[512];
 		snprintf(cmd, sizeof(cmd), "exec dbus-run-session %s", xinitrc);
-		execl("/bin/zsh", "zsh", "--login", "-c", cmd, NULL);
+		execl("/usr/bin/zsh", "zsh", "--login", "-c", cmd, NULL);
 	} else {
 		execl("/usr/bin/dbus-run-session", "dbus-run-session", "/usr/bin/dwm", NULL);
 	}
 }
 
 int main(void) {
+	setenv("DISPLAY", ":0", 0);
+	setenv("XAUTHORITY", "/tmp/.mrlogin.xauth", 0);
 	char *display = getenv("DISPLAY");
 	dpy = XOpenDisplay(display ? display : ":0");
 	if (!dpy) { fprintf(stderr, "Cannot open display\n"); return 1; }
@@ -494,14 +508,15 @@ int main(void) {
 	XSetWindowAttributes wa;
 	wa.override_redirect = True;
 	wa.background_pixel  = mkcolor(BG_COLOR);
-	wa.event_mask        = KeyPressMask|ButtonPressMask|ExposureMask;
+	wa.event_mask        = KeyPressMask|ButtonPressMask|ButtonReleaseMask|PointerMotionMask|ExposureMask;
 	win = XCreateWindow(dpy, root, 0, 0, sw, sh, 0,
-		DefaultDepth(dpy, screen), InputOutput, vis,
-		CWOverrideRedirect|CWBackPixel|CWEventMask, &wa);
+			    DefaultDepth(dpy, screen), InputOutput, vis,
+			    CWOverrideRedirect|CWBackPixel|CWEventMask, &wa);
 	XMapRaised(dpy, win);
 	XGrabKeyboard(dpy, win, True, GrabModeAsync, GrabModeAsync, CurrentTime);
-	XGrabPointer(dpy, win, True, ButtonPressMask,
-		GrabModeAsync, GrabModeAsync, win, None, CurrentTime);
+	XGrabPointer(dpy, win, True,
+		     ButtonPressMask|ButtonReleaseMask|PointerMotionMask,
+		     GrabModeAsync, GrabModeAsync, win, None, CurrentTime);
 	gc            = XCreateGC(dpy, win, 0, NULL);
 	xdraw         = XftDrawCreate(dpy, win, vis, cmap);
 	font_title    = XftFontOpenName(dpy, screen, FONT_TITLE);
@@ -514,6 +529,10 @@ int main(void) {
 	font_avatar   = XftFontOpenName(dpy, screen, FONT_AVATAR);
 	font_fa       = XftFontOpenName(dpy, screen, FONT_FA);
 	font_fa_lg    = XftFontOpenName(dpy, screen, FONT_FA_LG);
+	/* cursors */
+	Cursor cursor_normal = XCreateFontCursor(dpy, 68);
+	Cursor cursor_hand   = XCreateFontCursor(dpy, 60);
+	XDefineCursor(dpy, win, cursor_normal);
 	redraw();
 	XEvent ev;
 	while (!auth_ok) {
@@ -522,14 +541,22 @@ int main(void) {
 		fd_set fds;
 		FD_ZERO(&fds);
 		FD_SET(fd, &fds);
-		if (select(fd+1, &fds, NULL, NULL, &tv) == 0) { redraw(); continue; }
+		if (select(fd+1, &fds, NULL, NULL, &tv) == 0) {
+			static time_t last_t = 0;
+			time_t now = time(NULL);
+			if (now != last_t || locked_until > now || disabled) {
+				last_t = now;
+				redraw();
+			}
+			continue;
+		}
 		XNextEvent(dpy, &ev);
 		if (ev.type == Expose) {
 			redraw();
 		} else if (ev.type == ButtonPress) {
 			int bx = ev.xbutton.x;
 			int by = ev.xbutton.y;
-			/* eye */
+			/* eye toggle */
 			if (bx >= eye_x && bx <= eye_x+eye_w &&
 			    by >= eye_y && by <= eye_y+eye_h) {
 				show_pass = !show_pass;
@@ -539,7 +566,7 @@ int main(void) {
 			/* user buttons */
 			int cols = (nusers > 3) ? 3 : nusers;
 			if (cols < 1) cols = 1;
-			int gap = 12;
+			int gap     = 12;
 			int total_w = cols * USER_BTN_W + (cols-1) * gap;
 			int card_x  = sw/2 - CARD_W/2;
 			int card_y  = sh/2 - CARD_H/2;
@@ -569,6 +596,43 @@ int main(void) {
 			    by >= lby && by <= lby+50)
 				try_login();
 			redraw();
+		} else if (ev.type == ButtonRelease) {
+			redraw();
+		} else if (ev.type == MotionNotify) {
+			int mx = ev.xmotion.x;
+			int my = ev.xmotion.y;
+			int card_x  = sw/2 - CARD_W/2;
+			int card_y  = sh/2 - CARD_H/2;
+			int ix      = card_x + 28;
+			int iw      = CARD_W - 56;
+			int py      = card_y + 218;
+			int dots_y  = py + INPUT_H;
+			int lby     = dots_y + dots_height() + 4;
+			int hovering = 0;
+			/* login button */
+			if (mx >= ix && mx <= ix+iw && my >= lby && my <= lby+50)
+				hovering = 1;
+			/* eye */
+			if (mx >= eye_x && mx <= eye_x+eye_w &&
+			    my >= eye_y && my <= eye_y+eye_h)
+				hovering = 1;
+			/* user buttons */
+			int cols    = (nusers > 3) ? 3 : nusers;
+			if (cols < 1) cols = 1;
+			int gap     = 12;
+			int total_w = cols * USER_BTN_W + (cols-1) * gap;
+			int start_x = card_x + CARD_W/2 - total_w/2;
+			int uy      = card_y + 80;
+			for (int i = 0; i < nusers; i++) {
+				int col = i % cols;
+				int row = i / cols;
+				int ubx = start_x + col * (USER_BTN_W + gap);
+				int uby = uy + row * (USER_BTN_H + gap);
+				if (mx >= ubx && mx <= ubx+USER_BTN_W &&
+				    my >= uby && my <= uby+USER_BTN_H)
+					hovering = 1;
+			}
+			XDefineCursor(dpy, win, hovering ? cursor_hand : cursor_normal);
 		} else if (ev.type == KeyPress) {
 			char buf[32] = {0};
 			KeySym ks;
@@ -593,6 +657,8 @@ int main(void) {
 			redraw();
 		}
 	}
+	XFreeCursor(dpy, cursor_normal);
+	XFreeCursor(dpy, cursor_hand);
 	XUngrabKeyboard(dpy, CurrentTime);
 	XUngrabPointer(dpy, CurrentTime);
 	XDestroyWindow(dpy, win);
