@@ -1,7 +1,10 @@
 CC      = gcc
-CFLAGS  = -std=c99 -Wall -Os -I/usr/include/freetype2
-LDFLAGS = -lX11 -lXft -lpam
-PREFIX  = /usr/local
+CFLAGS  = -std=c99 -Wall -Os \
+           -I/usr/include/freetype2 \
+           $(shell pkg-config --cflags gdk-pixbuf-2.0 cairo cairo-xlib)
+LDFLAGS = $(shell pkg-config --libs gdk-pixbuf-2.0 cairo cairo-xlib) \
+           -lX11 -lXft -lXext -lpam -lXss
+PREFIX  = /usr
 TARGET  = mrlogin
 
 all: $(TARGET)
@@ -13,6 +16,7 @@ install: $(TARGET)
 	install -Dm755 $(TARGET) $(PREFIX)/bin/$(TARGET)
 	install -Dm644 mrlogin.service /etc/systemd/system/mrlogin.service
 	install -Dm644 mrlogin.pam /etc/pam.d/mrlogin
+	systemctl daemon-reload
 
 uninstall:
 	rm -f $(PREFIX)/bin/$(TARGET)

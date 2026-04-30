@@ -1,29 +1,40 @@
 [Unit]
 Description=MrLogin - Display Manager for MrRobotOS
 After=systemd-user-sessions.service
+After=systemd-logind.service
+After=dbus.service
 Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
 ExecStart=/bin/sh -c '\
   while true; do \
-    Xorg :0 vt1 -nolisten tcp & \
+    pkill -x Xorg 2>/dev/null; \
+    sleep 1; \
+    touch /tmp/.mrlogin.xauth; \
+    chmod 600 /tmp/.mrlogin.xauth; \
+    xauth -f /tmp/.mrlogin.xauth add :0 . $(xxd -l 16 -p /dev/urandom); \
+	Xorg :0 vt1 -nolisten tcp -auth /tmp/.mrlogin.xauth -logfile /dev/null > /dev/null 2>&1 & \
     XPID=$!; \
     for i in $(seq 1 10); do \
-      DISPLAY=:0 xdpyinfo >/dev/null 2>&1 && break; \
+      DISPLAY=:0 XAUTHORITY=/tmp/.mrlogin.xauth xdpyinfo >/dev/null 2>&1 && break; \
       sleep 1; \
     done; \
-    DISPLAY=:0 /usr/local/bin/mrlogin; \
+    DISPLAY=:0 XAUTHORITY=/tmp/.mrlogin.xauth /usr/bin/mrlogin; \
     kill $XPID 2>/dev/null; \
     wait $XPID 2>/dev/null; \
     sleep 1; \
   done'
 Restart=always
 RestartSec=2
+TimeoutStopSec=10
 StandardInput=tty
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
+UtmpIdentifier=tty1
+UtmpMode=user
 
 [Install]
 Alias=display-manager.service
+WantedBy=graphical.target
